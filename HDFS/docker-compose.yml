@@ -1,0 +1,115 @@
+
+services:
+  namenode:
+    image: apache/hadoop:3.4.1
+    container_name: namenode
+    hostname: namenode
+    platform: linux/amd64
+    user: root
+    ports:
+      - "9870:9870"     # Web UI del NameNode
+      - "9100:9100"     # Puerto RPC de HDFS
+      - "9001:9001"     # (Opcional, según necesidad)
+    volumes:
+      - ./namenode_data:/hadoop/dfs/name
+      - ./config/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml
+      - ./config/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml
+    command: >
+      bash -c "
+      if [ ! -d /hadoop/dfs/name/current ]; then
+        mkdir -p /hadoop/dfs/name &&
+        /opt/hadoop/bin/hdfs namenode -format;
+      fi &&
+      /opt/hadoop/bin/hdfs namenode
+      "
+    networks:
+      - unified-network
+
+  datanode:
+    image: apache/hadoop:3.4.1
+    container_name: datanode
+    hostname: datanode
+    platform: linux/amd64
+    depends_on:
+      - namenode
+    ports:
+      - "9864:9864"     # Web UI del DataNode
+    volumes:
+      - ./datanode_data:/hadoop/dfs/data
+      - ./config/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml
+      - ./config/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml
+    command: >
+      bash -c "
+      mkdir -p /hadoop/dfs/data &&
+      /opt/hadoop/bin/hdfs datanode
+      "
+    networks:
+      - unified-network
+
+  datanode2:
+    image: apache/hadoop:3.4.1
+    container_name: datanode2
+    hostname: datanode2
+    platform: linux/amd64
+    depends_on:
+      - namenode
+    ports:
+      - "9865:9864"     # Web UI del segundo DataNode (mapeamos el puerto interno 9864 al 9865 en el host)
+    volumes:
+      - ./datanode2_data:/hadoop/dfs/data   # Carpeta exclusiva para este DataNode
+      - ./config/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml
+      - ./config/hdfs-site.xml:/opt/hadoop/etc/hadoop/hdfs-site.xml
+    command: >
+      bash -c "
+      mkdir -p /hadoop/dfs/data &&
+      /opt/hadoop/bin/hdfs datanode
+      "
+    networks:
+      - unified-network
+
+  hive-server:
+    image: bde2020/hive:latest
+    container_name: hive-server
+    hostname: hive-server
+    platform: linux/amd64
+    user: root
+    depends_on:
+      - namenode
+      - datanode
+      - datanode2
+    ports:
+      - "10000:10000"   # HiveServer2 (JDBC)
+      - "9083:9083"     # Metastore Thrift
+    volumes:
+      - ./config/core-site.xml:/opt/hadoop/etc/hadoop/core-site.xml
+      - ./config/hive-site.xml:/opt/hive/conf/hive-site.xml
+    environment:
+      # Se indica la URI para que Hive sepa dónde está HDFS
+      CORE_CONF_fs_defaultFS: "hdfs://namenode:9100"
+      # Configuración del metastore de Hive
+      HIVE_METASTORE_URI: "thrift://hive-server:9083"
+      HIVE_SERVER2_THRIFT_BIND_HOST: "0.0.0.0"
+      HIVE_SERVER2_THRIFT_PORT: "10000"
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        echo "Inicializando el esquema de Hive..."
+        /opt/hive/bin/schematool -initSchema -dbType derby || echo "El esquema ya está inicializado."
+        echo "Iniciando el servicio Metastore..."
+        /opt/hive/bin/hive --service metastore &
+        sleep 10
+        echo "Iniciando HiveServer2..."
+        /opt/hive/bin/hive --service hiveserver2
+    networks:
+      - unified-network
+
+volumes:
+  namenode_data:
+  datanode_data:
+  datanode2_data:
+
+networks:
+  unified-network:
+    external: true
+    name: unified-network

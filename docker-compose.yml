@@ -1,0 +1,15 @@
+services:
+  streamsets:
+    build: .                # Usa el Dockerfile en el directorio raíz
+    container_name: streamsets_kafka_HDFS
+    ports:
+      - "18630:18630"       # Mapea el puerto de la interfaz web de StreamSets
+    volumes:
+      - ./datasource:/opt/streamsets/datasource
+    networks:
+      - unified-network
+
+networks:
+  unified-network:
+    external: true
+    name: unified-network
